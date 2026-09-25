@@ -1,2 +1,9 @@
 skills/
 node_modules/
+.next/
+db/
+dev.log
+server.log
+*.log
+.zscripts/
+.env

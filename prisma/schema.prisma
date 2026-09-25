@@ -1,0 +1,117 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============ Garfix ERP Schema ============
+
+model Client {
+  id        String    @id @default(cuid())
+  name      String
+  company   String?
+  phone     String?
+  email     String?
+  address   String?
+  city      String?
+  notes     String?
+  status    String    @default("active") // active | inactive | lead
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  invoices  Invoice[]
+}
+
+model Product {
+  id        String        @id @default(cuid())
+  name      String
+  sku       String        @unique
+  category  String?
+  unit      String        @default("قطعة")
+  price     Float
+  cost      Float         @default(0)
+  stock     Int           @default(0)
+  minStock  Int           @default(5)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  items     InvoiceItem[]
+}
+
+model Invoice {
+  id         String        @id @default(cuid())
+  number     String        @unique
+  clientId   String
+  client     Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  issueDate  DateTime      @default(now())
+  dueDate    DateTime
+  status     String        @default("draft") // draft | sent | partial | paid | cancelled
+  items      InvoiceItem[]
+  payments   Payment[]
+  subtotal   Float         @default(0)
+  vatRate    Float         @default(14)
+  vatAmount  Float         @default(0)
+  total      Float         @default(0)
+  paidAmount Float         @default(0)
+  notes      String?
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+}
+
+model InvoiceItem {
+  id          String   @id @default(cuid())
+  invoiceId   String
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  productId   String?
+  product     Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  description String
+  quantity    Float    @default(1)
+  unitPrice   Float
+  total       Float
+}
+
+model Payment {
+  id        String   @id @default(cuid())
+  invoiceId String
+  invoice   Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  amount    Float
+  method    String   @default("cash") // cash | bank | wallet | cheque
+  date      DateTime @default(now())
+  reference String?
+  notes     String?
+}
+
+model Expense {
+  id          String   @id @default(cuid())
+  category    String // rent | salaries | purchases | marketing | utilities | other
+  description String?
+  amount      Float
+  date        DateTime @default(now())
+  vendor      String?
+}
+
+// Agent Engine — سجل تشغيل الوكلاء الأذكياء
+model AgentRun {
+  id        String   @id @default(cuid())
+  agent     String // finance | inventory | crm | general
+  query     String
+  response  String?
+  status    String   @default("running") // running | done | error
+  duration  Int? // ms
+  createdAt DateTime @default(now())
+}
+
+model ActivityLog {
+  id        String   @id @default(cuid())
+  action    String
+  entity    String
+  detail    String?
+  createdAt DateTime @default(now())
+}
+
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
