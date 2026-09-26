@@ -44,8 +44,10 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "@/hooks/use-toast";
-import { UserPlus, Pencil, Trash2, Search, Phone, Mail, MapPin, AlertTriangle } from "lucide-react";
+import { UserPlus, Pencil, Trash2, Search, Phone, Mail, MapPin, AlertTriangle, MessageCircle } from "lucide-react";
 import { fmtEGP, CLIENT_STATUS } from "./format";
+import { waLink } from "@/lib/whatsapp";
+import { type SessionUser } from "@/lib/roles";
 
 interface ClientRow {
   id: string;
@@ -73,7 +75,7 @@ const emptyForm = {
   notes: "",
 };
 
-export function ClientsSection() {
+export function ClientsSection({ user }: { user: SessionUser }) {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -89,6 +91,12 @@ export function ClientsSection() {
       return res.json();
     },
   });
+
+  const { data: settingsData } = useQuery<{ settings: Record<string, string> }>({
+    queryKey: ["settings"],
+    queryFn: async () => (await fetch("/api/settings")).json(),
+  });
+  const companyName = settingsData?.settings?.company_name || "Garfix";
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -240,12 +248,37 @@ export function ClientsSection() {
                           </td>
                           <td className="py-3">
                             <div className="flex items-center gap-1 justify-end">
+                              {c.balance > 0.01 && c.phone && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="text-emerald-500"
+                                  aria-label="تذكير واتساب"
+                                  title={`تذكير واتساب بالرصيد ${fmtEGP(c.balance)}`}
+                                  onClick={() => {
+                                    const link = waLink({
+                                      phone: c.phone,
+                                      company: companyName,
+                                      clientName: c.name,
+                                      invoiceNumber: "إجمالي الرصيد",
+                                      balance: c.balance,
+                                      dueDate: new Date(),
+                                    });
+                                    if (link) window.open(link, "_blank");
+                                    else toast({ title: "رقم الهاتف غير صالح للواتساب", variant: "destructive" });
+                                  }}
+                                >
+                                  <MessageCircle className="h-4 w-4" />
+                                </Button>
+                              )}
                               <Button variant="ghost" size="icon" onClick={() => openEdit(c)} aria-label="تعديل">
                                 <Pencil className="h-4 w-4" />
                               </Button>
-                              <Button variant="ghost" size="icon" onClick={() => setDeleteId(c.id)} aria-label="حذف" className="text-destructive hover:text-destructive">
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
+                              {user.role !== "sales" && (
+                                <Button variant="ghost" size="icon" onClick={() => setDeleteId(c.id)} aria-label="حذف" className="text-destructive hover:text-destructive">
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -283,12 +316,36 @@ export function ClientsSection() {
                         </div>
                       </div>
                       <div className="flex gap-2 pt-1">
-                        <Button variant="outline" size="sm" className="flex-1 gap-1" onClick={() => openEdit(c)}>
-                          <Pencil className="h-3.5 w-3.5" /> تعديل
-                        </Button>
-                        <Button variant="outline" size="sm" className="flex-1 gap-1 text-destructive" onClick={() => setDeleteId(c.id)}>
-                          <Trash2 className="h-3.5 w-3.5" /> حذف
-                        </Button>
+                        {c.balance > 0.01 && c.phone ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="flex-1 gap-1 text-emerald-600"
+                            onClick={() => {
+                              const link = waLink({
+                                phone: c.phone,
+                                company: companyName,
+                                clientName: c.name,
+                                invoiceNumber: "إجمالي الرصيد",
+                                balance: c.balance,
+                                dueDate: new Date(),
+                              });
+                              if (link) window.open(link, "_blank");
+                              else toast({ title: "رقم الهاتف غير صالح للواتساب", variant: "destructive" });
+                            }}
+                          >
+                            <MessageCircle className="h-3.5 w-3.5" /> تذكير
+                          </Button>
+                        ) : (
+                          <Button variant="outline" size="sm" className="flex-1 gap-1" onClick={() => openEdit(c)}>
+                            <Pencil className="h-3.5 w-3.5" /> تعديل
+                          </Button>
+                        )}
+                        {user.role !== "sales" && (
+                          <Button variant="outline" size="sm" className="flex-1 gap-1 text-destructive" onClick={() => setDeleteId(c.id)}>
+                            <Trash2 className="h-3.5 w-3.5" /> حذف
+                          </Button>
+                        )}
                       </div>
                     </div>
                   );

@@ -68,7 +68,7 @@ export async function buildBusinessContext(): Promise<string> {
     }),
     db.expense.findMany(),
     db.product.findMany(),
-    db.client.findMany(),
+    db.client.findMany({ include: { invoices: { select: { total: true } } } }),
     db.payment.findMany(),
   ]);
 
@@ -125,7 +125,7 @@ export async function buildBusinessContext(): Promise<string> {
     .sort((a, b) => b.total - a.total)
     .slice(0, 5)
     .map((c) => `${c.name}: ${EGP(c.total)}`)
-    .join("\n");
+    .join("\n  ");
 
   const expenseByCat = new Map<string, number>();
   for (const e of expenses) {
@@ -161,14 +161,14 @@ ${lowStockStr || "لا يوجد — المخزون سليم"}
 ${overdueStr || "لا يوجد متأخرات — ممتاز!"}`;
 }
 
-/** تشغيل وكيل: يعيد رد النموذج مع تسجيل العملية */
-export async function runAgent(agent: AgentType, query: string): Promise<{ response: string; duration: number }> {
+/** تشغيل وكيل: يعيد رد النموذج مع تسجيل العملية ومستخدمها */
+export async function runAgent(agent: AgentType, query: string, userEmail?: string): Promise<{ response: string; duration: number }> {
   const started = Date.now();
   const agentDef = AGENTS[agent] ?? AGENTS.general;
   const context = await buildBusinessContext();
 
   const run = await db.agentRun.create({
-    data: { agent, query: query.slice(0, 2000), status: "running" },
+    data: { agent, query: query.slice(0, 2000), status: "running", userEmail },
   });
 
   try {

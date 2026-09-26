@@ -3,8 +3,11 @@
  */
 import { db } from "@/lib/db";
 import { getSettings, jsonErr, logActivity } from "@/lib/erp";
+import { requireUser } from "@/lib/auth";
 
 export async function GET() {
+  const auth = await requireUser();
+  if ("error" in auth) return auth.error;
   try {
     const settings = await getSettings();
     const activity = await db.activityLog.findMany({
@@ -18,6 +21,8 @@ export async function GET() {
 }
 
 export async function PATCH(request: Request) {
+  const auth = await requireUser(["admin"]);
+  if ("error" in auth) return auth.error;
   try {
     const body = (await request.json()) as Record<string, string>;
     const allowed = [
@@ -40,7 +45,7 @@ export async function PATCH(request: Request) {
         create: { key, value: value.trim() },
       });
     }
-    await logActivity("update", "settings", `تحديث الإعدادات: ${entries.map(([k]) => k).join(", ")}`);
+    await logActivity("update", "settings", `تحديث الإعدادات: ${entries.map(([k]) => k).join(", ")}`, auth.user.email);
     const settings = await getSettings();
     return Response.json({ settings, ok: true });
   } catch (e) {

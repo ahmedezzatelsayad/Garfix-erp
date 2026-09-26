@@ -4,9 +4,12 @@
  */
 import { db } from "@/lib/db";
 import { jsonErr } from "@/lib/erp";
+import { requireUser } from "@/lib/auth";
 import { runAgent, AGENTS, type AgentType } from "@/lib/agent/engine";
 
 export async function GET() {
+  const auth = await requireUser();
+  if ("error" in auth) return auth.error;
   try {
     const runs = await db.agentRun.findMany({
       orderBy: { createdAt: "desc" },
@@ -35,6 +38,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const auth = await requireUser();
+  if ("error" in auth) return auth.error;
   try {
     const body = await request.json();
     const agent = (body.agent || "general") as AgentType;
@@ -42,7 +47,7 @@ export async function POST(request: Request) {
     if (!query) return jsonErr("اكتب سؤالك أولاً");
     if (!AGENTS[agent]) return jsonErr("وكيل غير معروف");
 
-    const { response, duration } = await runAgent(agent, query);
+    const { response, duration } = await runAgent(agent, query, auth.user.email);
     return Response.json({ response, duration, agent });
   } catch (e) {
     return jsonErr(`تعذر تشغيل الوكيل: ${(e as Error).message}`, 500);

@@ -3,8 +3,11 @@
  */
 import { db } from "@/lib/db";
 import { jsonErr, logActivity, nextInvoiceNumber, getSettings } from "@/lib/erp";
+import { requireUser } from "@/lib/auth";
 
 export async function GET() {
+  const auth = await requireUser();
+  if ("error" in auth) return auth.error;
   try {
     const invoices = await db.invoice.findMany({
       include: {
@@ -46,6 +49,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const auth = await requireUser();
+  if ("error" in auth) return auth.error;
   try {
     const body = await request.json();
     if (!body.clientId) return jsonErr("اختيار العميل مطلوب");
@@ -114,7 +119,7 @@ export async function POST(request: Request) {
       }
     }
 
-    await logActivity("create", "invoice", `إنشاء فاتورة ${number} للعميل ${client.name}`);
+    await logActivity("create", "invoice", `إنشاء فاتورة ${number} للعميل ${client.name}`, auth.user.email);
     return Response.json(invoice, { status: 201 });
   } catch (e) {
     return jsonErr((e as Error).message, 500);

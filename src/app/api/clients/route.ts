@@ -1,10 +1,13 @@
 /**
  * Garfix ERP — Clients API
  */
+import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { jsonErr, logActivity } from "@/lib/erp";
 
 export async function GET() {
+  const auth = await requireUser();
+  if ("error" in auth) return auth.error;
   try {
     const clients = await db.client.findMany({
       include: {
@@ -47,6 +50,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const auth = await requireUser();
+  if ("error" in auth) return auth.error;
   try {
     const body = await request.json();
     if (!body.name?.trim()) return jsonErr("اسم العميل مطلوب");

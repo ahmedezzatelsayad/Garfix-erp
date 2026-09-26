@@ -1,10 +1,13 @@
 /**
  * Garfix ERP — Expenses API (المصروفات)
  */
+import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { jsonErr, logActivity } from "@/lib/erp";
 
 export async function GET() {
+  const auth = await requireUser(["admin", "accountant"]);
+  if ("error" in auth) return auth.error;
   try {
     const expenses = await db.expense.findMany({ orderBy: { date: "desc" } });
     const catLabels: Record<string, string> = {
@@ -27,6 +30,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const auth = await requireUser(["admin", "accountant"]);
+  if ("error" in auth) return auth.error;
   try {
     const body = await request.json();
     const amount = Number(body.amount);
@@ -41,7 +46,7 @@ export async function POST(request: Request) {
         date: body.date ? new Date(body.date) : new Date(),
       },
     });
-    await logActivity("create", "expense", `تسجيل مصروف ${expense.amount} — ${expense.category}`);
+    await logActivity("create", "expense", `تسجيل مصروف ${expense.amount} — ${expense.category}`, auth.user.email);
     return Response.json(expense, { status: 201 });
   } catch (e) {
     return jsonErr((e as Error).message, 500);

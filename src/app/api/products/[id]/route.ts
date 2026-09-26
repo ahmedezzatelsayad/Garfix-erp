@@ -3,10 +3,13 @@
  */
 import { db } from "@/lib/db";
 import { jsonErr, logActivity } from "@/lib/erp";
+import { requireUser } from "@/lib/auth";
 
 type Params = { params: Promise<{ id: string }> };
 
 export async function PATCH(request: Request, { params }: Params) {
+  const auth = await requireUser(["admin", "accountant"]);
+  if ("error" in auth) return auth.error;
   try {
     const { id } = await params;
     const body = await request.json();
@@ -29,7 +32,7 @@ export async function PATCH(request: Request, { params }: Params) {
         minStock: body.minStock !== undefined ? Number(body.minStock) : existing.minStock,
       },
     });
-    await logActivity("update", "product", `تحديث منتج: ${product.name}`);
+    await logActivity("update", "product", `تحديث منتج: ${product.name}`, auth.user.email);
     return Response.json(product);
   } catch (e) {
     return jsonErr((e as Error).message, 500);
@@ -37,6 +40,8 @@ export async function PATCH(request: Request, { params }: Params) {
 }
 
 export async function DELETE(_request: Request, { params }: Params) {
+  const auth = await requireUser(["admin", "accountant"]);
+  if ("error" in auth) return auth.error;
   try {
     const { id } = await params;
     const existing = await db.product.findUnique({
@@ -45,7 +50,7 @@ export async function DELETE(_request: Request, { params }: Params) {
     });
     if (!existing) return jsonErr("المنتج غير موجود", 404);
     await db.product.delete({ where: { id } });
-    await logActivity("delete", "product", `حذف منتج: ${existing.name}`);
+    await logActivity("delete", "product", `حذف منتج: ${existing.name}`, auth.user.email);
     return Response.json({ ok: true });
   } catch (e) {
     return jsonErr((e as Error).message, 500);

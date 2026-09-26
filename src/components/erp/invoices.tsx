@@ -48,8 +48,11 @@ import {
   Send,
   Eye,
   Printer,
+  MessageCircle,
 } from "lucide-react";
 import { fmtEGP, fmtDate, fmtDateInput, INVOICE_STATUS, PAYMENT_METHODS } from "./format";
+import { waLink } from "@/lib/whatsapp";
+import { can, type SessionUser } from "@/lib/roles";
 
 interface InvoiceRow {
   id: string;
@@ -105,7 +108,7 @@ type LineItem = { productId: string; description: string; quantity: string; unit
 
 const emptyItem: LineItem = { productId: "", description: "", quantity: "1", unitPrice: "" };
 
-export function InvoicesSection() {
+export function InvoicesSection({ user }: { user: SessionUser }) {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -114,6 +117,9 @@ export function InvoicesSection() {
   const [payFor, setPayFor] = useState<InvoiceRow | null>(null);
   const [payAmount, setPayAmount] = useState("");
   const [payMethod, setPayMethod] = useState("cash");
+
+  const canPay = can(user, "payments:write");
+  const canDelete = user.role !== "sales";
 
   // نموذج الإنشاء
   const [cClientId, setCClientId] = useState("");
@@ -146,6 +152,12 @@ export function InvoicesSection() {
     queryKey: ["products"],
     queryFn: async () => (await fetch("/api/products")).json(),
   });
+
+  const { data: settingsData } = useQuery<{ settings: Record<string, string> }>({
+    queryKey: ["settings"],
+    queryFn: async () => (await fetch("/api/settings")).json(),
+  });
+  const companyName = settingsData?.settings?.company_name || "Garfix";
 
   const { data: detail } = useQuery<InvoiceDetail>({
     queryKey: ["invoice", detailId],
@@ -368,6 +380,32 @@ export function InvoicesSection() {
                         <Eye className="h-4 w-4" />
                       </Button>
                       {inv.balance > 0.01 && inv.status !== "cancelled" && inv.status !== "draft" && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-emerald-500"
+                          aria-label="تذكير واتساب"
+                          title="إرسال تذكير تحصيل واتساب"
+                          onClick={() => {
+                            const link = waLink({
+                              phone: inv.clientPhone,
+                              company: companyName,
+                              clientName: inv.clientName,
+                              invoiceNumber: inv.number,
+                              balance: inv.balance,
+                              dueDate: inv.dueDate,
+                              overdueDays: inv.status === "overdue"
+                                ? Math.floor((Date.now() - new Date(inv.dueDate).getTime()) / 86400000)
+                                : undefined,
+                            });
+                            if (link) window.open(link, "_blank");
+                            else toast({ title: "لا يوجد رقم واتساب صالح لهذا العميل", variant: "destructive" });
+                          }}
+                        >
+                          <MessageCircle className="h-4 w-4" />
+                        </Button>
+                      )}
+                      {canPay && inv.balance > 0.01 && inv.status !== "cancelled" && inv.status !== "draft" && (
                         <Button variant="ghost" size="icon" className="text-emerald-600" onClick={() => { setPayFor(inv); setPayAmount(String(Math.round(inv.balance))); }} aria-label="تسجيل دفعة">
                           <Banknote className="h-4 w-4" />
                         </Button>
@@ -377,9 +415,11 @@ export function InvoicesSection() {
                           <Send className="h-4 w-4" />
                         </Button>
                       )}
-                      <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => deleteMutation.mutate(inv.id)} aria-label="حذف">
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      {canDelete && (
+                        <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => deleteMutation.mutate(inv.id)} aria-label="حذف">
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -630,24 +670,47 @@ export function InvoicesSection() {
                   )}
                 </div>
               </ScrollArea>
-              <DialogFooter className="sm:justify-between">
-                <Button variant="outline" className="gap-1.5" onClick={() => window.print()}>
-                  <Printer className="h-4 w-4" /> طباعة
-                </Button>
-                <Button
-                  className="gap-1.5"
-                  onClick={() => {
-                    const inv = invoices?.find((i) => i.id === detailId);
-                    if (inv) {
-                      setDetailId(null);
-                      setPayFor(inv);
-                      setPayAmount(String(Math.round(inv.balance)));
-                    }
-                  }}
-                  disabled={detail.total - detail.paidAmount <= 0.01}
-                >
-                  <Banknote className="h-4 w-4" /> تسجيل دفعة
-                </Button>
+              <DialogFooter className="sm:justify-between gap-2">
+                <div className="flex gap-2">
+                  <Button variant="outline" className="gap-1.5" onClick={() => window.open(`/invoice/${detail.id}/print`, "_blank")}>
+                    <Printer className="h-4 w-4" /> طباعة / PDF
+                  </Button>
+                  {detail.client.phone && detail.total - detail.paidAmount > 0.01 && (
+                    <Button
+                      variant="outline"
+                      className="gap-1.5 text-emerald-600 hover:text-emerald-600"
+                      onClick={() => {
+                        const link = waLink({
+                          phone: detail.client.phone,
+                          company: companyName,
+                          clientName: detail.client.company || detail.client.name,
+                          invoiceNumber: detail.number,
+                          balance: detail.total - detail.paidAmount,
+                          dueDate: detail.dueDate,
+                        });
+                        if (link) window.open(link, "_blank");
+                      }}
+                    >
+                      <MessageCircle className="h-4 w-4" /> تذكير
+                    </Button>
+                  )}
+                </div>
+                {canPay && (
+                  <Button
+                    className="gap-1.5"
+                    onClick={() => {
+                      const inv = invoices?.find((i) => i.id === detailId);
+                      if (inv) {
+                        setDetailId(null);
+                        setPayFor(inv);
+                        setPayAmount(String(Math.round(inv.balance)));
+                      }
+                    }}
+                    disabled={detail.total - detail.paidAmount <= 0.01}
+                  >
+                    <Banknote className="h-4 w-4" /> تسجيل دفعة
+                  </Button>
+                )}
               </DialogFooter>
             </>
           ) : (

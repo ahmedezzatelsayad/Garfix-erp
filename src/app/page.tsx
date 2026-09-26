@@ -2,9 +2,10 @@
 
 /**
  * Garfix ERP — الواجهة الرئيسية
- * المرحلة 4: التحليلات والتقارير والإعدادات فوق نواة ERP + Agent Engine
+ * المرحلة 5: المستخدمون والأمان — بوابة دخول + أدوار + إدارة المستخدمين
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useTheme } from "next-themes";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -27,6 +28,9 @@ import {
   Wrench,
   CheckCircle2,
   CircleDot,
+  LogOut,
+  ShieldCheck,
+  Loader2,
 } from "lucide-react";
 import { DashboardSection } from "@/components/erp/dashboard";
 import { InvoicesSection } from "@/components/erp/invoices";
@@ -36,6 +40,8 @@ import { ExpensesSection } from "@/components/erp/expenses";
 import { AgentSection } from "@/components/erp/agent-console";
 import { ReportsSection } from "@/components/erp/reports";
 import { SettingsSection } from "@/components/erp/settings";
+import { UsersSection } from "@/components/erp/users";
+import { ROLE_ACCESS, ROLE_LABELS, type SessionUser } from "@/lib/roles";
 
 type TabKey =
   | "dashboard"
@@ -45,6 +51,7 @@ type TabKey =
   | "expenses"
   | "agent"
   | "reports"
+  | "users"
   | "settings";
 
 const NAV: {
@@ -60,15 +67,17 @@ const NAV: {
   { key: "inventory", label: "المخزون", icon: Package, desc: "إدارة المنتجات ومستويات المخزون" },
   { key: "expenses", label: "المصروفات", icon: Receipt, desc: "تسجيل وتصنيف المصروفات التشغيلية" },
   { key: "agent", label: "الوكلاء الأذكياء", icon: Bot, desc: "محرك الوكلاء — اسأل عن بياناتك", badge: "AI" },
-  { key: "reports", label: "التقارير", icon: BarChart3, desc: "قائمة الدخل وتقادم الذمم والتقييم", badge: "جديد" },
-  { key: "settings", label: "الإعدادات", icon: Settings, desc: "بيانات الشركة وإعدادات الفوترة" },
+  { key: "reports", label: "التقارير", icon: BarChart3, desc: "قائمة الدخل وتقادم الذمم والتقييم" },
+  { key: "users", label: "المستخدمون", icon: ShieldCheck, desc: "إدارة الحسابات والأدوار والصلاحيات", badge: "جديد" },
+  { key: "settings", label: "الإعدادات", icon: Settings, desc: "بيانات الشركة والنسخ الاحتياطي" },
 ];
 
 const PHASES = [
   { n: 1, label: "الأساس والنواة", done: true },
   { n: 2, label: "وحدات التشغيل", done: true },
   { n: 3, label: "محرك الوكلاء", done: true },
-  { n: 4, label: "التحليلات والتقارير", done: false, current: true },
+  { n: 4, label: "التحليلات والتقارير", done: true },
+  { n: 5, label: "المستخدمون والأمان", done: false, current: true },
 ];
 
 function ThemeToggle() {
@@ -139,10 +148,37 @@ function PhaseRoadmap() {
   );
 }
 
-function SidebarNav({ active, onSelect }: { active: TabKey; onSelect: (k: TabKey) => void }) {
+function UserCard({ user, onLogout }: { user: SessionUser; onLogout: () => void }) {
+  const initials = user.name.trim().slice(0, 2);
+  return (
+    <div className="mx-2 mb-2 rounded-xl border border-sidebar-border/60 bg-sidebar-accent/40 p-3">
+      <div className="flex items-center gap-2.5">
+        <div className="rounded-full bg-primary/15 text-primary border border-primary/30 w-9 h-9 flex items-center justify-center text-xs font-bold shrink-0">
+          {initials}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-sidebar-foreground truncate">{user.name}</p>
+          <p className="text-[10px] text-primary font-medium truncate">{ROLE_LABELS[user.role]}</p>
+        </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 text-sidebar-foreground/60 hover:text-destructive shrink-0"
+          onClick={onLogout}
+          aria-label="تسجيل الخروج"
+          title="تسجيل الخروج"
+        >
+          <LogOut className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function SidebarNav({ active, onSelect, allowedKeys }: { active: TabKey; onSelect: (k: TabKey) => void; allowedKeys: string[] }) {
   return (
     <nav className="flex-1 space-y-1 overflow-y-auto px-2 py-3" aria-label="التنقل الرئيسي">
-      {NAV.map((item) => {
+      {NAV.filter((item) => allowedKeys.includes(item.key)).map((item) => {
         const Icon = item.icon;
         const isActive = active === item.key;
         return (
@@ -175,6 +211,9 @@ function SidebarNav({ active, onSelect }: { active: TabKey; onSelect: (k: TabKey
 }
 
 export default function Home() {
+  const router = useRouter();
+  const [user, setUser] = useState<SessionUser | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
   const [tab, setTab] = useState<TabKey>("dashboard");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [queryClient] = useState(
@@ -190,7 +229,53 @@ export default function Home() {
   );
   const isMobile = useIsMobile();
 
-  const active = NAV.find((n) => n.key === tab)!;
+  // ===== بوابة الدخول: تحقق من الجلسة قبل عرض أي شيء =====
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/auth/login", { cache: "no-store" });
+        if (!alive) return;
+        if (res.ok) {
+          const j = await res.json();
+          setUser(j.user);
+        } else {
+          router.replace("/login");
+        }
+      } catch {
+        if (alive) router.replace("/login");
+      } finally {
+        if (alive) setAuthChecked(true);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [router]);
+
+  const logout = async () => {
+    await fetch("/api/auth/login", { method: "DELETE" });
+    queryClient.clear();
+    router.replace("/login");
+  };
+
+  if (!authChecked || !user) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-background">
+        <div className="rounded-2xl bg-primary p-3 text-primary-foreground shadow-lg shadow-primary/25">
+          <Wrench className="h-7 w-7" />
+        </div>
+        <div className="flex items-center gap-2 text-muted-foreground text-sm">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          جارٍ التحقق من الجلسة...
+        </div>
+      </div>
+    );
+  }
+
+  const allowedKeys = ROLE_ACCESS[user.role]?.nav ?? ROLE_ACCESS.sales.nav;
+
+  const active = NAV.find((n) => n.key === tab) ?? NAV[0];
 
   const navigate = (k: string) => {
     setTab(k as TabKey);
@@ -201,13 +286,14 @@ export default function Home() {
   const content = (
     <main className="flex-1 px-4 sm:px-6 py-6 w-full max-w-[1600px] mx-auto">
       {tab === "dashboard" && <DashboardSection onNavigate={navigate} />}
-      {tab === "invoices" && <InvoicesSection />}
-      {tab === "clients" && <ClientsSection />}
+      {tab === "invoices" && <InvoicesSection user={user} />}
+      {tab === "clients" && <ClientsSection user={user} />}
       {tab === "inventory" && <InventorySection />}
       {tab === "expenses" && <ExpensesSection />}
       {tab === "agent" && <AgentSection />}
       {tab === "reports" && <ReportsSection />}
-      {tab === "settings" && <SettingsSection />}
+      {tab === "users" && <UsersSection currentUser={user} />}
+      {tab === "settings" && <SettingsSection user={user} />}
     </main>
   );
 
@@ -220,10 +306,11 @@ export default function Home() {
           <div className="p-4 pb-3">
             <BrandLogo />
           </div>
-          <SidebarNav active={tab} onSelect={(k) => navigate(k)} />
+          <SidebarNav active={tab} onSelect={(k) => navigate(k)} allowedKeys={allowedKeys} />
           <PhaseRoadmap />
+          <UserCard user={user} onLogout={logout} />
           <div className="px-4 py-3 text-[10px] text-sidebar-foreground/40 border-t border-sidebar-border/60">
-            Garfix ERP v4.0 © 2026
+            Garfix ERP v5.0 © 2026
           </div>
         </aside>
 
@@ -244,8 +331,9 @@ export default function Home() {
                     <div className="p-4 pb-3">
                       <BrandLogo />
                     </div>
-                    <SidebarNav active={tab} onSelect={(k) => navigate(k)} />
+                    <SidebarNav active={tab} onSelect={(k) => navigate(k)} allowedKeys={allowedKeys} />
                     <PhaseRoadmap />
+                    <UserCard user={user} onLogout={logout} />
                   </SheetContent>
                 </Sheet>
               )}
@@ -263,8 +351,19 @@ export default function Home() {
                       Agent Engine
                     </Badge>
                   )}
+                  {active.key === "users" && (
+                    <Badge className="bg-primary/10 text-primary border border-primary/30">
+                      المرحلة 5
+                    </Badge>
+                  )}
                 </div>
                 <p className="text-xs text-muted-foreground truncate hidden sm:block">{active.desc}</p>
+              </div>
+
+              <div className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground me-2">
+                <ShieldCheck className="h-3.5 w-3.5 text-primary" />
+                <span className="font-medium text-foreground">{user.name}</span>
+                <span className="text-muted-foreground/70">({ROLE_LABELS[user.role]})</span>
               </div>
 
               <ThemeToggle />
@@ -280,7 +379,7 @@ export default function Home() {
                 Garfix ERP — نظام إدارة الموارد الذكي
               </p>
               <p>
-                المرحلة 4 من 4 — التحليلات والتقارير والوكلاء الأذكياء
+                المرحلة 5 من 5 — المستخدمون والأمان والصلاحيات
               </p>
             </div>
           </footer>

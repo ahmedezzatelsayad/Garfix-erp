@@ -99,6 +99,7 @@ model AgentRun {
   response  String?
   status    String   @default("running") // running | done | error
   duration  Int? // ms
+  userEmail String?
   createdAt DateTime @default(now())
 }
 
@@ -107,6 +108,7 @@ model ActivityLog {
   action    String
   entity    String
   detail    String?
+  userEmail String? // من نفّذ الإجراء (المرحلة 5)
   createdAt DateTime @default(now())
 }
 
@@ -114,4 +116,27 @@ model Setting {
   key       String   @id
   value     String
   updatedAt DateTime @updatedAt
+}
+
+// ============ المرحلة 5: المستخدمون والجلسات ============
+model User {
+  id           String    @id @default(cuid())
+  name         String
+  email        String    @unique
+  passwordHash String
+  role         String    @default("sales") // admin | accountant | sales
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  sessions     Session[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
 }

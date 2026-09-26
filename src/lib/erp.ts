@@ -47,6 +47,6 @@ export async function nextInvoiceNumber(): Promise<string> {
   return `${prefix}${(isNaN(lastSeq) ? 1000 : lastSeq) + 1}`;
 }
 
-export async function logActivity(action: string, entity: string, detail?: string) {
-  await db.activityLog.create({ data: { action, entity, detail } });
+export async function logActivity(action: string, entity: string, detail?: string, userEmail?: string) {
+  await db.activityLog.create({ data: { action, entity, detail, userEmail } });
 }

@@ -3,10 +3,13 @@
  */
 import { db } from "@/lib/db";
 import { jsonErr, logActivity } from "@/lib/erp";
+import { requireUser } from "@/lib/auth";
 
 type Params = { params: Promise<{ id: string }> };
 
 export async function PATCH(request: Request, { params }: Params) {
+  const auth = await requireUser();
+  if ("error" in auth) return auth.error;
   try {
     const { id } = await params;
     const body = await request.json();
@@ -25,7 +28,7 @@ export async function PATCH(request: Request, { params }: Params) {
         notes: body.notes?.trim() ?? existing.notes,
       },
     });
-    await logActivity("update", "client", `تحديث عميل: ${client.name}`);
+    await logActivity("update", "client", `تحديث عميل: ${client.name}`, auth.user.email);
     return Response.json(client);
   } catch (e) {
     return jsonErr((e as Error).message, 500);
@@ -33,6 +36,8 @@ export async function PATCH(request: Request, { params }: Params) {
 }
 
 export async function DELETE(_request: Request, { params }: Params) {
+  const auth = await requireUser(["admin", "accountant"]);
+  if ("error" in auth) return auth.error;
   try {
     const { id } = await params;
     const existing = await db.client.findUnique({
@@ -44,7 +49,7 @@ export async function DELETE(_request: Request, { params }: Params) {
       return jsonErr(`لا يمكن حذف العميل لوجود ${existing._count.invoices} فاتورة مرتبطة به`, 409);
     }
     await db.client.delete({ where: { id } });
-    await logActivity("delete", "client", `حذف عميل: ${existing.name}`);
+    await logActivity("delete", "client", `حذف عميل: ${existing.name}`, auth.user.email);
     return Response.json({ ok: true });
   } catch (e) {
     return jsonErr((e as Error).message, 500);

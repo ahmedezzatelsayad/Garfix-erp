@@ -4,10 +4,13 @@
  */
 import { db } from "@/lib/db";
 import { jsonErr, logActivity } from "@/lib/erp";
+import { requireUser } from "@/lib/auth";
 
 type Params = { params: Promise<{ id: string }> };
 
 export async function GET(_request: Request, { params }: Params) {
+  const auth = await requireUser();
+  if ("error" in auth) return auth.error;
   try {
     const { id } = await params;
     const invoice = await db.invoice.findUnique({
@@ -26,6 +29,8 @@ export async function GET(_request: Request, { params }: Params) {
 }
 
 export async function PATCH(request: Request, { params }: Params) {
+  const auth = await requireUser();
+  if ("error" in auth) return auth.error;
   try {
     const { id } = await params;
     const body = await request.json();
@@ -34,6 +39,8 @@ export async function PATCH(request: Request, { params }: Params) {
 
     // ===== تسجيل دفعة =====
     if (body.action === "payment") {
+      // الدفعات للمحاسبة والإدارة فقط
+      if (auth.user.role === "sales") return jsonErr("تسجيل الدفعات يتطلب صلاحية المحاسبة", 403);
       const amount = Number(body.amount);
       if (!amount || amount <= 0) return jsonErr("قيمة الدفعة غير صحيحة");
       const balance = invoice.total - invoice.paidAmount;
@@ -51,7 +58,7 @@ export async function PATCH(request: Request, { params }: Params) {
         },
       });
       const updated = await db.invoice.update({ where: { id }, data: { paidAmount: newPaid, status: newStatus } });
-      await logActivity("payment", "invoice", `تسجيل دفعة ${amount} على فاتورة ${invoice.number}`);
+      await logActivity("payment", "invoice", `تسجيل دفعة ${amount} على فاتورة ${invoice.number}`, auth.user.email);
       return Response.json(updated);
     }
 
@@ -74,7 +81,7 @@ export async function PATCH(request: Request, { params }: Params) {
         where: { id },
         data: { status: body.status, paidAmount: body.status === "paid" ? invoice.total : invoice.paidAmount },
       });
-      await logActivity("status", "invoice", `تغيير حالة فاتورة ${invoice.number} إلى ${body.status}`);
+      await logActivity("status", "invoice", `تغيير حالة فاتورة ${invoice.number} إلى ${body.status}`, auth.user.email);
       return Response.json(updated);
     }
 
@@ -85,6 +92,8 @@ export async function PATCH(request: Request, { params }: Params) {
 }
 
 export async function DELETE(_request: Request, { params }: Params) {
+  const auth = await requireUser(["admin", "accountant"]);
+  if ("error" in auth) return auth.error;
   try {
     const { id } = await params;
     const invoice = await db.invoice.findUnique({ where: { id }, include: { items: true } });
@@ -101,7 +110,7 @@ export async function DELETE(_request: Request, { params }: Params) {
       }
     }
     await db.invoice.delete({ where: { id } });
-    await logActivity("delete", "invoice", `حذف فاتورة ${invoice.number}`);
+    await logActivity("delete", "invoice", `حذف فاتورة ${invoice.number}`, auth.user.email);
     return Response.json({ ok: true });
   } catch (e) {
     return jsonErr((e as Error).message, 500);

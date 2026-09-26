@@ -4,8 +4,11 @@
  */
 import { db } from "@/lib/db";
 import { effectiveStatus } from "@/lib/erp";
+import { requireUser } from "@/lib/auth";
 
 export async function GET() {
+  const auth = await requireUser(["admin", "accountant"]);
+  if ("error" in auth) return auth.error;
   try {
     const [invoices, expenses, products, clients, payments] = await Promise.all([
       db.invoice.findMany({
@@ -14,7 +17,7 @@ export async function GET() {
       db.expense.findMany(),
       db.product.findMany(),
       db.client.findMany({ include: { invoices: { include: { payments: true } } } }),
-      db.payment.findMany({ include: { invoice: { include: { items: true } } } }),
+      db.payment.findMany({ include: { invoice: { include: { items: { include: { product: { select: { cost: true } } } } } } } }),
     ]);
 
     const arMonths = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];

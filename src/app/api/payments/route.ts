@@ -1,10 +1,13 @@
 /**
  * Garfix ERP — Payments API (المدفوعات)
  */
+import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { jsonErr } from "@/lib/erp";
 
 export async function GET() {
+  const auth = await requireUser();
+  if ("error" in auth) return auth.error;
   try {
     const payments = await db.payment.findMany({
       include: {

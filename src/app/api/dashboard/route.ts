@@ -4,8 +4,11 @@
  */
 import { db } from "@/lib/db";
 import { effectiveStatus } from "@/lib/erp";
+import { requireUser } from "@/lib/auth";
 
 export async function GET() {
+  const auth = await requireUser();
+  if ("error" in auth) return auth.error;
   try {
     const [invoices, expenses, products, clients, payments] = await Promise.all([
       db.invoice.findMany({
