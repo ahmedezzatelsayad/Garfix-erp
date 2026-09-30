@@ -25,18 +25,19 @@ model Client {
 }
 
 model Product {
-  id        String        @id @default(cuid())
-  name      String
-  sku       String        @unique
-  category  String?
-  unit      String        @default("قطعة")
-  price     Float
-  cost      Float         @default(0)
-  stock     Int           @default(0)
-  minStock  Int           @default(5)
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
-  items     InvoiceItem[]
+  id            String          @id @default(cuid())
+  name          String
+  sku           String          @unique
+  category      String?
+  unit          String          @default("قطعة")
+  price         Float
+  cost          Float           @default(0)
+  stock         Int             @default(0)
+  minStock      Int             @default(5)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  items         InvoiceItem[]
+  purchaseItems PurchaseItem[]
 }
 
 model Invoice {
@@ -91,10 +92,71 @@ model Expense {
   vendor      String?
 }
 
+// ============ المرحلة 6: المشتريات والموردون ============
+
+model Supplier {
+  id        String            @id @default(cuid())
+  name      String
+  company   String?
+  phone     String?
+  email     String?
+  address   String?
+  city      String?
+  taxId     String?
+  notes     String?
+  status    String            @default("active") // active | inactive
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  purchases Purchase[]
+}
+
+model Purchase {
+  id         String            @id @default(cuid())
+  number     String            @unique
+  supplierId String
+  supplier   Supplier          @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  issueDate  DateTime          @default(now())
+  dueDate    DateTime
+  status     String            @default("draft") // draft | ordered | received | partial | paid | cancelled
+  items      PurchaseItem[]
+  payments   SupplierPayment[]
+  subtotal   Float             @default(0)
+  vatRate    Float             @default(14)
+  vatAmount  Float             @default(0)
+  total      Float             @default(0)
+  paidAmount Float             @default(0)
+  notes      String?
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+}
+
+model PurchaseItem {
+  id          String    @id @default(cuid())
+  purchaseId  String
+  purchase    Purchase  @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  productId   String?
+  product     Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
+  description String
+  quantity    Float     @default(1)
+  unitCost    Float
+  total       Float
+}
+
+model SupplierPayment {
+  id         String   @id @default(cuid())
+  purchaseId String
+  purchase   Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  amount     Float
+  method     String   @default("cash") // cash | bank | wallet | cheque
+  date       DateTime @default(now())
+  reference  String?
+  notes      String?
+}
+
 // Agent Engine — سجل تشغيل الوكلاء الأذكياء
 model AgentRun {
   id        String   @id @default(cuid())
-  agent     String // finance | inventory | crm | general
+  agent     String // finance | inventory | crm | purchasing | general
   query     String
   response  String?
   status    String   @default("running") // running | done | error

@@ -18,6 +18,10 @@ async function main() {
   console.log("🧹 Clearing old data...");
   await db.agentRun.deleteMany();
   await db.activityLog.deleteMany();
+  await db.supplierPayment.deleteMany();
+  await db.purchaseItem.deleteMany();
+  await db.purchase.deleteMany();
+  await db.supplier.deleteMany();
   await db.payment.deleteMany();
   await db.invoiceItem.deleteMany();
   await db.invoice.deleteMany();
@@ -177,7 +181,7 @@ async function main() {
   const expenseTemplates = [
     { category: "rent", description: "إيجار المقر الرئيسي", amount: 18000, vendor: "مالك العقار" },
     { category: "salaries", description: "رواتب الفريق الشهرية", amount: 96000, vendor: "فريق جارفكس" },
-    { category: "purchases", description: "مشتريات مخزون شهرية", amount: 45000, vendor: "موردون متنوعون" },
+    { category: "purchases", description: "مصروفات نثرية للمشتريات", amount: 45000, vendor: "موردون متنوعون" },
     { category: "marketing", description: "حملات إعلانية رقمية", amount: 12000, vendor: "Meta & Google Ads" },
     { category: "utilities", description: "كهرباء وإنترنت ومياه", amount: 5500, vendor: "شركات المرافق" },
     { category: "other", description: "مصروفات تشغيلية متنوعة", amount: 4000, vendor: "متنوع" },
@@ -189,6 +193,136 @@ async function main() {
       await db.expense.create({
         data: { category: t.category, description: t.description, amount: EGP(t.amount * variance), date: d, vendor: t.vendor },
       });
+    }
+  }
+
+  // ===== المرحلة 6: الموردون والمشتريات =====
+  console.log("🏭 Seeding suppliers...");
+  const suppliersData = [
+    { name: "حسام الدين مرسي", company: "النيل للتوزيع التقني", phone: "01100334455", email: "husam@nile-tech.com", city: "القاهرة", taxId: "220-114-887", status: "active", categories: ["إلكترونيات"] },
+    { name: "عماد زكي", company: "مصنع الدلتا للأثاث المكتبي", phone: "01055667788", email: "emad@delta-furn.com", city: "المنصورة", taxId: "310-982-445", status: "active", categories: ["أثاث مكتبي"] },
+    { name: "سامح عبد العال", company: "مكتبة الأمانة للقرطاسية", phone: "01277889900", email: "sameh@amana-books.com", city: "الجيزة", taxId: "412-455-663", status: "active", categories: ["قرطاسية"] },
+    { name: "محمود قنديل", company: "شركة الفيبر للشبكات", phone: "01099887766", email: "mahmoud@fiber-net.com", city: "الإسكندرية", taxId: "503-776-221", status: "active", categories: ["شبكات", "أنظمة أمنية"] },
+    { name: "أحمد الشناوي", company: "الشرق للأجهزة المنزلية", phone: "01144556677", email: "ahmed@sharq-app.com", city: "العاشر من رمضان", taxId: "604-331-990", status: "active", categories: ["أجهزة منزلية"] },
+    { name: "فاطمة الزهراء", company: "مؤسسة الوفاق للتوريدات العامة", phone: "01233445566", email: "fatma@wefaq-supplies.com", city: "طنطا", taxId: "705-220-118", status: "inactive", categories: [] },
+  ];
+  const suppliers = await Promise.all(
+    suppliersData.map((s) =>
+      db.supplier.create({
+        data: {
+          name: s.name,
+          company: s.company,
+          phone: s.phone,
+          email: s.email,
+          city: s.city,
+          taxId: s.taxId,
+          status: s.status,
+          address: `${s.city} — منطقة المستودعات التجارية`,
+          notes: s.categories.length ? `متخصص: ${s.categories.join(" / ")}` : "مورّد عام",
+        },
+      })
+    )
+  );
+
+  console.log("🚚 Seeding purchases (last 6 months)...");
+  // مزود يرجّع المورد المناسب حسب تصنيف المنتج
+  const supplierByCategory: Record<string, number> = {
+    "إلكترونيات": 0,
+    "أثاث مكتبي": 1,
+    "قرطاسية": 2,
+    "شبكات": 3,
+    "أنظمة أمنية": 3,
+    "أجهزة منزلية": 4,
+  };
+  const supplierFor = (product: { category: string | null }) =>
+    suppliers[supplierByCategory[product.category || ""] ?? 5] ?? suppliers[5];
+
+  const purchasePlans = [
+    { monthsAgo: 5, count: 3, statuses: ["paid", "paid", "received"] },
+    { monthsAgo: 4, count: 3, statuses: ["paid", "paid", "partial"] },
+    { monthsAgo: 3, count: 4, statuses: ["paid", "paid", "paid", "partial"] },
+    { monthsAgo: 2, count: 4, statuses: ["paid", "paid", "partial", "received"] },
+    { monthsAgo: 1, count: 4, statuses: ["paid", "partial", "received", "ordered"] },
+    { monthsAgo: 0, count: 3, statuses: ["received", "ordered", "draft"] },
+  ];
+
+  let purSeq = 2000;
+  let purIndex = 0;
+  for (const plan of purchasePlans) {
+    for (let i = 0; i < plan.count; i++) {
+      const status = plan.statuses[i];
+      // نختار منتجات متنوعة لكل فاتورة شراء
+      const itemCount = 1 + (purIndex % 3);
+      const items: {
+        productId: string | null;
+        description: string;
+        quantity: number;
+        unitCost: number;
+        total: number;
+      }[] = [];
+      const supplierProduct = products[(purIndex * 2 + 1) % products.length];
+      const supplier = supplierFor(supplierProduct);
+
+      for (let j = 0; j < itemCount; j++) {
+        const product = products[(purIndex * 2 + j * 4 + 1) % products.length];
+        // تكلفة المورد أقل قليلاً من تكلفة النظام (هامش المورد)
+        const costFactor = 0.9 + ((purIndex + j) % 4) * 0.03;
+        const qty = 2 + ((purIndex + j * 3) % 8);
+        items.push({
+          productId: product.id,
+          description: product.name,
+          quantity: qty,
+          unitCost: EGP(product.cost * costFactor),
+          total: EGP(qty * product.cost * costFactor),
+        });
+      }
+
+      const applyVat = purIndex % 3 === 0; // ثلث الفواتير بضريبة المورد
+      const subtotal = EGP(items.reduce((s, it) => s + it.total, 0));
+      const vatAmount = applyVat ? EGP(subtotal * VAT) : 0;
+      const total = EGP(subtotal + vatAmount);
+
+      const issueDate = daysAgo(plan.monthsAgo * 30 + (i * 4 + 3));
+      const dueDate = new Date(issueDate);
+      dueDate.setDate(dueDate.getDate() + 15);
+
+      let paidAmount = 0;
+      if (status === "paid") paidAmount = total;
+      else if (status === "partial") paidAmount = EGP(total * 0.5);
+
+      const purchase = await db.purchase.create({
+        data: {
+          number: `PUR-${purSeq + purIndex}`,
+          supplierId: supplier.id,
+          issueDate,
+          dueDate,
+          status,
+          subtotal,
+          vatRate: applyVat ? 14 : 0,
+          vatAmount,
+          total,
+          paidAmount,
+          notes: purIndex % 4 === 0 ? "تسليم بمستودع الشركة — تم فحص الكميات" : null,
+          items: { create: items },
+        },
+      });
+
+      if (paidAmount > 0) {
+        const payDate = new Date(issueDate);
+        payDate.setDate(payDate.getDate() + 7 + (purIndex % 5));
+        const method = ["bank", "cash", "cheque"][purIndex % 3];
+        if (status === "partial") {
+          await db.supplierPayment.create({
+            data: { purchaseId: purchase.id, amount: EGP(paidAmount), method, date: payDate, reference: `SPAY-${purSeq + purIndex}-1` },
+          });
+        } else {
+          await db.supplierPayment.create({
+            data: { purchaseId: purchase.id, amount: paidAmount, method, date: payDate, reference: `SPAY-${purSeq + purIndex}` },
+          });
+        }
+      }
+
+      purIndex++;
     }
   }
 
@@ -205,6 +339,9 @@ async function main() {
     invoices: await db.invoice.count(),
     payments: await db.payment.count(),
     expenses: await db.expense.count(),
+    suppliers: await db.supplier.count(),
+    purchases: await db.purchase.count(),
+    supplierPayments: await db.supplierPayment.count(),
   };
   console.log("✅ Seed done:", count);
 }

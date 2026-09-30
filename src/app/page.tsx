@@ -17,6 +17,7 @@ import {
   LayoutDashboard,
   FileText,
   Users,
+  Truck,
   Package,
   Receipt,
   Bot,
@@ -35,6 +36,7 @@ import {
 import { DashboardSection } from "@/components/erp/dashboard";
 import { InvoicesSection } from "@/components/erp/invoices";
 import { ClientsSection } from "@/components/erp/clients";
+import { PurchasesSection } from "@/components/erp/purchases";
 import { InventorySection } from "@/components/erp/inventory";
 import { ExpensesSection } from "@/components/erp/expenses";
 import { AgentSection } from "@/components/erp/agent-console";
@@ -47,6 +49,7 @@ type TabKey =
   | "dashboard"
   | "invoices"
   | "clients"
+  | "purchases"
   | "inventory"
   | "expenses"
   | "agent"
@@ -62,13 +65,14 @@ const NAV: {
   badge?: string;
 }[] = [
   { key: "dashboard", label: "لوحة المعلومات", icon: LayoutDashboard, desc: "نظرة شاملة على أداء شركتك" },
-  { key: "invoices", label: "الفواتير", icon: FileText, desc: "إنشاء ومتابعة الفواتير والمدفوعات" },
+  { key: "invoices", label: "الفواتير", icon: FileText, desc: "إنشاء ومتابعة فواتير البيع والمدفوعات" },
   { key: "clients", label: "العملاء", icon: Users, desc: "قاعدة بيانات العملاء وأرصدتهم" },
+  { key: "purchases", label: "المشتريات والموردون", icon: Truck, desc: "فواتير الشراء والاستلام ومدفوعات الموردين", badge: "جديد" },
   { key: "inventory", label: "المخزون", icon: Package, desc: "إدارة المنتجات ومستويات المخزون" },
   { key: "expenses", label: "المصروفات", icon: Receipt, desc: "تسجيل وتصنيف المصروفات التشغيلية" },
   { key: "agent", label: "الوكلاء الأذكياء", icon: Bot, desc: "محرك الوكلاء — اسأل عن بياناتك", badge: "AI" },
   { key: "reports", label: "التقارير", icon: BarChart3, desc: "قائمة الدخل وتقادم الذمم والتقييم" },
-  { key: "users", label: "المستخدمون", icon: ShieldCheck, desc: "إدارة الحسابات والأدوار والصلاحيات", badge: "جديد" },
+  { key: "users", label: "المستخدمون", icon: ShieldCheck, desc: "إدارة الحسابات والأدوار والصلاحيات" },
   { key: "settings", label: "الإعدادات", icon: Settings, desc: "بيانات الشركة والنسخ الاحتياطي" },
 ];
 
@@ -77,7 +81,8 @@ const PHASES = [
   { n: 2, label: "وحدات التشغيل", done: true },
   { n: 3, label: "محرك الوكلاء", done: true },
   { n: 4, label: "التحليلات والتقارير", done: true },
-  { n: 5, label: "المستخدمون والأمان", done: false, current: true },
+  { n: 5, label: "المستخدمون والأمان", done: true },
+  { n: 6, label: "المشتريات والموردون", done: false, current: true },
 ];
 
 function ThemeToggle() {
@@ -288,6 +293,7 @@ export default function Home() {
       {tab === "dashboard" && <DashboardSection onNavigate={navigate} />}
       {tab === "invoices" && <InvoicesSection user={user} />}
       {tab === "clients" && <ClientsSection user={user} />}
+      {tab === "purchases" && <PurchasesSection user={user} />}
       {tab === "inventory" && <InventorySection />}
       {tab === "expenses" && <ExpensesSection />}
       {tab === "agent" && <AgentSection />}
@@ -310,7 +316,7 @@ export default function Home() {
           <PhaseRoadmap />
           <UserCard user={user} onLogout={logout} />
           <div className="px-4 py-3 text-[10px] text-sidebar-foreground/40 border-t border-sidebar-border/60">
-            Garfix ERP v5.0 © 2026
+            Garfix ERP v6.0 © 2026
           </div>
         </aside>
 
@@ -356,6 +362,11 @@ export default function Home() {
                       المرحلة 5
                     </Badge>
                   )}
+                  {active.key === "purchases" && (
+                    <Badge className="bg-primary/10 text-primary border border-primary/30">
+                      المرحلة 6
+                    </Badge>
+                  )}
                 </div>
                 <p className="text-xs text-muted-foreground truncate hidden sm:block">{active.desc}</p>
               </div>
@@ -379,7 +390,7 @@ export default function Home() {
                 Garfix ERP — نظام إدارة الموارد الذكي
               </p>
               <p>
-                المرحلة 5 من 5 — المستخدمون والأمان والصلاحيات
+                المرحلة 6 من 6 — المشتريات والموردون وتكلفة البضاعة
               </p>
             </div>
           </footer>

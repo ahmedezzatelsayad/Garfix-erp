@@ -30,6 +30,22 @@ export const INVOICE_STATUS: Record<string, { label: string; variant: "default" 
   cancelled: { label: "ملغاة", variant: "destructive" },
 };
 
+/** حالات فاتورة الشراء (المرحلة 6) */
+export const PURCHASE_STATUS: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" | "success" }> = {
+  paid: { label: "مدفوعة", variant: "success" },
+  partial: { label: "مدفوعة جزئياً", variant: "secondary" },
+  received: { label: "مُستلمة", variant: "default" },
+  ordered: { label: "مطلوبة", variant: "outline" },
+  draft: { label: "مسودة", variant: "outline" },
+  overdue: { label: "متأخرة السداد", variant: "destructive" },
+  cancelled: { label: "ملغاة", variant: "destructive" },
+};
+
+export const SUPPLIER_STATUS: Record<string, { label: string; variant: "default" | "secondary" | "outline" }> = {
+  active: { label: "نشط", variant: "default" },
+  inactive: { label: "غير نشط", variant: "outline" },
+};
+
 export const CLIENT_STATUS: Record<string, { label: string; variant: "default" | "secondary" | "outline" }> = {
   active: { label: "نشط", variant: "default" },
   inactive: { label: "غير نشط", variant: "outline" },

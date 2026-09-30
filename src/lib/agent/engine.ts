@@ -6,7 +6,7 @@
 import { db } from "@/lib/db";
 import { effectiveStatus } from "@/lib/erp";
 
-export type AgentType = "finance" | "inventory" | "crm" | "general";
+export type AgentType = "finance" | "inventory" | "crm" | "purchasing" | "general";
 
 export const AGENTS: Record<
   AgentType,
@@ -45,6 +45,18 @@ export const AGENTS: Record<
 - تحديد العملاء الأكثر تأخراً مع المبالغ وعدد الأيام.
 - اقتراح خطة متابعة واقعية (مكالمة، رسالة، زيارة).`,
   },
+  purchasing: {
+    name: "مساعد المشتريات",
+    description: "تحليل الموردين ومستحقاتهم واقتراح أوامر الشراء",
+    systemPrompt: `أنت "مساعد المشتريات" في نظام Garfix ERP — خبير مشتريات وسلاسل توريد للسوق المصري.
+مهمتك: تحليل أداء الموردين، متابعة مستحقاتهم، واقتراح أوامر شراء ذكية بناءً على نواقص المخزون وتكاليف الشراء.
+التزم بـ:
+- الرد بالعربية الفصحى المبسطة.
+- ذكر الموردين بالاسم والمبالغ المحددة من البيانات.
+- عند اقتراح أمر شراء: حدد المنتج والكمية المقترحة والمورد الأنسب والتكلفة التقديرية.
+- التنبيه لمستحقات الموردين المتأخرة وتأثيرها على التدفق النقدي.
+- مقارنة الموردين حسب حجم التعامل والتكلفة عند توفر البيانات.`,
+  },
   general: {
     name: "مساعد Garfix",
     description: "مساعد عام يجيب عن أي سؤال متعلق بالنظام والبيانات",
@@ -62,7 +74,7 @@ const EGP = (n: number) =>
 
 /** يجمع سياق الأعمال الحالي من قاعدة البيانات */
 export async function buildBusinessContext(): Promise<string> {
-  const [invoices, expenses, products, clients, payments] = await Promise.all([
+  const [invoices, expenses, products, clients, payments, purchases, suppliers, supplierPayments] = await Promise.all([
     db.invoice.findMany({
       include: { client: { select: { name: true, company: true } }, items: true },
     }),
@@ -70,6 +82,11 @@ export async function buildBusinessContext(): Promise<string> {
     db.product.findMany(),
     db.client.findMany({ include: { invoices: { select: { total: true } } } }),
     db.payment.findMany(),
+    db.purchase.findMany({
+      include: { supplier: { select: { name: true, company: true } }, items: true },
+    }),
+    db.supplier.findMany(),
+    db.supplierPayment.findMany(),
   ]);
 
   const now = new Date();
@@ -110,11 +127,6 @@ export async function buildBusinessContext(): Promise<string> {
     )
     .join("\n");
 
-  const lowStock = products.filter((p) => p.stock <= p.minStock);
-  const lowStockStr = lowStock
-    .map((p) => `${p.name} (${p.sku}) — متوفر ${p.stock} ${p.unit} / الحد الأدنى ${p.minStock}`)
-    .join("\n");
-
   const inventoryValue = products.reduce((s, p) => s + p.stock * p.cost, 0);
 
   const topClients = clients
@@ -132,6 +144,40 @@ export async function buildBusinessContext(): Promise<string> {
     expenseByCat.set(e.category, (expenseByCat.get(e.category) || 0) + e.amount);
   }
 
+  // ===== المرحلة 6: سياق المشتريات والموردين =====
+  const activePurchases = purchases.filter((p) => p.status !== "cancelled" && p.status !== "draft");
+  const totalPurchases = activePurchases.reduce((s, p) => s + p.subtotal, 0);
+  const supplierPayables = activePurchases.reduce((s, p) => s + (p.total - p.paidAmount), 0);
+  const overduePurchases = activePurchases.filter(
+    (p) => p.status !== "paid" && p.total - p.paidAmount > 0.01 && p.dueDate.getTime() < now.getTime()
+  );
+  const topSuppliers = suppliers
+    .map((s) => {
+      const supPurchases = activePurchases.filter((p) => p.supplierId === s.id);
+      return {
+        name: s.company || s.name,
+        purchased: supPurchases.reduce((sum, p) => sum + p.total, 0),
+        balance: supPurchases.reduce((sum, p) => sum + (p.total - p.paidAmount), 0),
+        count: supPurchases.length,
+      };
+    })
+    .filter((s) => s.count > 0)
+    .sort((a, b) => b.purchased - a.purchased)
+    .slice(0, 6)
+    .map((s) => `${s.name}: مشتريات ${EGP(s.purchased)} في ${s.count} فاتورة — رصيد ${EGP(s.balance)}`)
+    .join("\n  ");
+  const lowStockForReorder = products.filter((p) => p.stock <= p.minStock);
+  const reorderStr = lowStockForReorder
+    .map((p) => {
+      const lastPurchase = purchases
+        .flatMap((pu) => pu.items)
+        .filter((it) => it.productId === p.id)
+        .sort((a, b) => b.quantity - a.quantity)[0];
+      const lastCost = lastPurchase?.unitCost ?? p.cost;
+      return `${p.name} (${p.sku}) — متوفر ${p.stock} / الحد الأدنى ${p.minStock} — آخر تكلفة شراء ${EGP(lastCost)} — كمية مقترحة ${Math.max(p.minStock * 2 - p.stock, p.minStock)} ${p.unit}`;
+    })
+    .join("\n");
+
   return `بيانات الشركة الحالية (محدّثة الآن):
 — عدد العملاء: ${clients.length} (نشط: ${clients.filter((c) => c.status === "active").length})
 — عدد المنتجات: ${products.length} / قيمة المخزون بالتكلفة: ${EGP(inventoryValue)}
@@ -141,6 +187,16 @@ export async function buildBusinessContext(): Promise<string> {
 — صافي الربح التقديري: ${EGP(totalRevenue - totalExpenses)}
 — الذمم المستحقة (غير محصلة): ${EGP(receivables)}
 — إجمالي المتأخر: ${EGP(overdue.reduce((s, i) => s + (i.total - i.paidAmount), 0))} في ${overdue.length} فاتورة
+
+المشتريات والموردون (المرحلة 6):
+— عدد الموردين: ${suppliers.length} (نشط: ${suppliers.filter((s) => s.status === "active").length})
+— إجمالي المشتريات (صافي بدون ضريبة): ${EGP(totalPurchases)} في ${activePurchases.length} فاتورة
+— مستحقات الموردين (غير مسددة): ${EGP(supplierPayables)}
+— مستحقات متأخرة السداد: ${EGP(overduePurchases.reduce((s, p) => s + (p.total - p.paidAmount), 0))} في ${overduePurchases.length} فاتورة
+— مدفوع للموردين حتى الآن: ${EGP(supplierPayments.reduce((s, sp) => s + sp.amount, 0))}
+
+أهم الموردين:
+  ${topSuppliers || "لا يوجد"}
 
 الأداء الشهري (آخر 6 أشهر):
 ${last6.join("\n")}
@@ -154,8 +210,8 @@ ${Array.from(expenseByCat.entries())
 أهم العملاء:
 ${topClients || "لا يوجد"}
 
-منتجات تحت الحد الأدنى:
-${lowStockStr || "لا يوجد — المخزون سليم"}
+منتجات تحت الحد الأدنى (فرص أمر شراء):
+${reorderStr || "لا يوجد — المخزون سليم"}
 
 الفواتير المتأخرة:
 ${overdueStr || "لا يوجد متأخرات — ممتاز!"}`;

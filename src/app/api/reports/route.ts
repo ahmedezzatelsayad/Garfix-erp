@@ -1,6 +1,6 @@
 /**
- * Garfix ERP — Reports API (المرحلة 4: التقارير المالية)
- * قائمة الدخل | تقادم الذمم | تقييم المخزون | أداء العملاء
+ * Garfix ERP — Reports API (المرحلة 4: التقارير المالية + المرحلة 6: المشتريات)
+ * قائمة الدخل | تقادم الذمم | تقييم المخزون | أداء العملاء | المشتريات والموردون
  */
 import { db } from "@/lib/db";
 import { effectiveStatus } from "@/lib/erp";
@@ -10,7 +10,7 @@ export async function GET() {
   const auth = await requireUser(["admin", "accountant"]);
   if ("error" in auth) return auth.error;
   try {
-    const [invoices, expenses, products, clients, payments] = await Promise.all([
+    const [invoices, expenses, products, clients, payments, purchases, suppliers, supplierPayments] = await Promise.all([
       db.invoice.findMany({
         include: { client: true, items: { include: { product: true } } },
       }),
@@ -18,6 +18,11 @@ export async function GET() {
       db.product.findMany(),
       db.client.findMany({ include: { invoices: { include: { payments: true } } } }),
       db.payment.findMany({ include: { invoice: { include: { items: { include: { product: { select: { cost: true } } } } } } } }),
+      db.purchase.findMany({
+        include: { supplier: { select: { name: true, company: true } }, items: true, payments: true },
+      }),
+      db.supplier.findMany(),
+      db.supplierPayment.findMany(),
     ]);
 
     const arMonths = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
@@ -155,6 +160,63 @@ export async function GET() {
     // ===== ملخص تنفيذي =====
     const totalRevenue = payments.reduce((s, p) => s + p.amount, 0);
     const totalExpenses = expenses.reduce((s, e) => s + e.amount, 0);
+
+    // ===== المرحلة 6: المشتريات والموردون =====
+    const activePurchases = purchases.filter((p) => p.status !== "cancelled" && p.status !== "draft");
+    const receivedPurchases = purchases.filter((p) => ["received", "partial", "paid"].includes(p.status));
+    const purchasesByMonth = monthsList.map((m) => {
+      const monthPurchases = activePurchases.filter((p) => monthKey(p.issueDate) === m.key);
+      return {
+        month: m.label,
+        purchases: Math.round(monthPurchases.reduce((s, p) => s + p.subtotal, 0) * 100) / 100,
+        supplierPayments: Math.round(
+          supplierPayments
+            .filter((sp) => monthKey(sp.date) === m.key)
+            .reduce((s, sp) => s + sp.amount, 0) * 100
+        ) / 100,
+      };
+    });
+
+    const supplierPerformance = suppliers
+      .map((s) => {
+        const supPurchases = activePurchases.filter((p) => p.supplierId === s.id);
+        const purchased = supPurchases.reduce((sum, p) => sum + p.total, 0);
+        const paid = supPurchases.reduce((sum, p) => sum + p.paidAmount, 0);
+        const overdue = supPurchases.filter(
+          (p) => p.status !== "paid" && p.total - p.paidAmount > 0.01 && p.dueDate.getTime() < now.getTime()
+        );
+        return {
+          name: s.company || s.name,
+          city: s.city,
+          status: s.status,
+          purchaseCount: supPurchases.length,
+          purchased: Math.round(purchased * 100) / 100,
+          paid: Math.round(paid * 100) / 100,
+          balance: Math.round((purchased - paid) * 100) / 100,
+          overdueCount: overdue.length,
+          overdueAmount: Math.round(overdue.reduce((sum, p) => sum + (p.total - p.paidAmount), 0) * 100) / 100,
+          paymentRate: purchased > 0 ? Math.round((paid / purchased) * 1000) / 10 : 0,
+        };
+      })
+      .sort((a, b) => b.purchased - a.purchased);
+
+    const purchasesSummary = {
+      totalPurchases: Math.round(activePurchases.reduce((s, p) => s + p.total, 0) * 100) / 100,
+      totalPurchasesNet: Math.round(activePurchases.reduce((s, p) => s + p.subtotal, 0) * 100) / 100,
+      totalSupplierPayments: Math.round(supplierPayments.reduce((s, sp) => s + sp.amount, 0) * 100) / 100,
+      supplierPayables: Math.round(
+        activePurchases.reduce((s, p) => s + (p.total - p.paidAmount), 0) * 100
+      ) / 100,
+      supplierOverdue: Math.round(
+        activePurchases
+          .filter((p) => p.status !== "paid" && p.total - p.paidAmount > 0.01 && p.dueDate.getTime() < now.getTime())
+          .reduce((s, p) => s + (p.total - p.paidAmount), 0) * 100
+      ) / 100,
+      purchaseCount: activePurchases.length,
+      receivedCount: receivedPurchases.length,
+      supplierCount: suppliers.length,
+    };
+
     const summary = {
       totalRevenue: Math.round(totalRevenue * 100) / 100,
       totalExpenses: Math.round(totalExpenses * 100) / 100,
@@ -163,7 +225,17 @@ export async function GET() {
       overdueTotal: aging.slice(1).reduce((s, b) => s + b.amount, 0),
     };
 
-    return Response.json({ pnl, aging, overdueInvoices, inventoryValuation, clientPerformance, summary });
+    return Response.json({
+      pnl,
+      aging,
+      overdueInvoices,
+      inventoryValuation,
+      clientPerformance,
+      summary,
+      purchasesByMonth,
+      supplierPerformance,
+      purchasesSummary,
+    });
   } catch (e) {
     return Response.json({ error: (e as Error).message }, { status: 500 });
   }

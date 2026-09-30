@@ -1254,3 +1254,40 @@ Stage Summary:
 - الحواجز أثبتت نفسها E2E: قراءة فقط افتراضياً ببطاقة تأكيد بشرية، سقف مالي يحجب الأفعال الكبيرة، لا حذف إطلاقاً، وكل استدعاء (نجح/حُجب/فشل) مدوّن في agent_audit_log بمسؤوليته
 - اللحظة الفاصلة تعمل عبر المستودعين: جملة واحدة → شركة ERP + متجر Garfix Stores حقيقي مربوط بالـ webhooks — طلبات المتجر تتدفق فواتير تلقائياً
 - المستودعان مرفوعان إلى GitHub (Garfix-space: المرحلة 2 كاملة + Mahhl: مسار provision-store)
+
+---
+Task ID: phase-6
+Agent: main (Super Z)
+Task: Garfix ERP — المرحلة 6: المشتريات والموردون (تكلفة البضاعة الحقيقية)
+
+Work Log:
+- Prisma: 4 نماذج جديدة (Supplier/Purchase/PurchaseItem/SupplierPayment) + علاقة Product.purchaseItems + db push
+- src/lib/erp.ts: nextPurchaseNumber + receiveStock (متوسط مرجح) + reverseStock + payStatusFor + isReceived
+- API جديدة: /api/suppliers (GET/POST) + /api/suppliers/[id] (PATCH/DELETE مع تعطيل بدل حذف) + /api/purchases (GET/POST) + /api/purchases/[id] (GET/PATCH: receive/order/payment/cancel/notes)
+- تحديث /api/reports: purchasesByMonth + supplierPerformance + purchasesSummary
+- تحديث /api/dashboard: KPIs (supplierPayables/purchasesThisMonth) + topSuppliers + recentPurchases + purchasesTrend
+- UI جديدة: src/components/erp/purchases.tsx — تبويبا فواتير الشراء والموردين + ملخصات + 3 حوارات (شراء/دفعة مورد/مورد)
+- ربط بالـ SPA: عنصر تنقل جديد + PHASES محدثة + footer المرحلة 6
+- الأدوار: purchases للمدير والمحاسب فقط — المبيعات لا تراها (تم التحقق 403)
+- محرك الوكلاء: وكيل خامس «مساعد المشتريات» + سياق المشتريات والموردين وفرص إعادة الطلب
+- Seed: 6 موردين مصريين واقعيين + 21 فاتورة شراء (paid/received/partial/ordered/draft/overdue) + 14 دفعة مورد
+- README محدّث بالمرحلة 6
+
+اختبار E2E كامل:
+1) APIs: suppliers/purchases/dashboard/reports كلها ترجع بيانات صحيحة
+2) دورة الشراء API: إنشاء PUR-2021 (draft→ordered→received→partial→paid) — المتوسط المرجح 266.67 = (2×1100+10×100)/12 ✓
+3) الإلغاء العكسي: إرجاع المخزون 12→2 ✓
+4) RBAC: sales على POST purchases → 403 «ليست لديك صلاحية» ✓
+5) UI بالمتصفح: قسم المشتريات (بطاقات ملخص + قائمة بفلاتر) + إنشاء PUR-2022 من الحوار + طلب + استلام PUR-2020 (ترحيل 3 بنود: ورق/كاميرا/سامسونج بتكاليف مرجحة صحيحة 809.17/1458.91/7035.43) ✓
+6) تبويب الموردين: بطاقات بأرصدة ومتأخرات ✓
+7) التقارير: تبويب المشتريات والموردين (رسم شهري + جدول أداء الموردين) ✓
+8) الداشبورد: 8 KPIs + أعلى الموردين + أحدث فواتير الشراء ✓
+9) وكيل المشتريات AI: رد حقيقي 12 ثانية بتحليل مستحقات (289,673 ج.م في 8 فواتير) + اقتراح أوامر شراء بكميات وتكاليف ✓
+10) lint 0 أخطاء + tsc 0 أخطاء (src) + لا أخطاء console/dev.log
+لقطات: p6-01..p6-10 في download/
+
+Stage Summary:
+- النظام الآن ERP كامل الدورة: شراء → مخزون بتكلفة حقيقية → بيع → تحصيل → تقارير دقيقة COGS
+- المستحقات تظهر من الجهتين: ذمم العملاء (لنا) ومستحقات الموردين (علينا) — رؤية كاملة للتدفق النقدي
+- 5 وكلاء AI بدل 4 — مساعد المشتريات يقترح أوامر شراء من بيانات فعلية
+- المرفوع إلى GitHub: المرحلة 6 كاملة على main

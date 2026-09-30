@@ -27,6 +27,7 @@ import {
   Landmark,
   Package,
   Users,
+  Truck,
   History,
   Trash2,
   User,
@@ -55,6 +56,7 @@ const agentIcons: Record<string, React.ElementType> = {
   finance: Landmark,
   inventory: Package,
   crm: Users,
+  purchasing: Truck,
   general: Bot,
 };
 
@@ -73,6 +75,11 @@ const suggestions: Record<string, string[]> = {
     "من أكثر العملاء تأخراً في السداد؟ اعرض الترتيب",
     "اكتب لي رسالة تحصيل مهذبة للعميل الأكثر تأخراً",
     "اقترح خطة متابعة لتحصيل الذمم المتأخرة",
+  ],
+  purchasing: [
+    "حلّل أداء الموردين واعرض أهم 3 ملاحظات على المستحقات",
+    "اقترح أمر شراء للمنتجات الناقصة مع الكميات والتكلفة التقديرية",
+    "ما مستحقات الموردين المتأخرة وتأثيرها على التدفق النقدي؟",
   ],
   general: [
     "لخص لي حالة الشركة الآن في نقاط",

@@ -10,7 +10,7 @@ export async function GET() {
   const auth = await requireUser();
   if ("error" in auth) return auth.error;
   try {
-    const [invoices, expenses, products, clients, payments] = await Promise.all([
+    const [invoices, expenses, products, clients, payments, purchases] = await Promise.all([
       db.invoice.findMany({
         include: { client: { select: { name: true, company: true } }, payments: true },
         orderBy: { issueDate: "desc" },
@@ -19,6 +19,10 @@ export async function GET() {
       db.product.findMany(),
       db.client.findMany({ include: { invoices: true } }),
       db.payment.findMany({ orderBy: { date: "desc" } }),
+      db.purchase.findMany({
+        include: { supplier: { select: { name: true, company: true } } },
+        orderBy: { issueDate: "desc" },
+      }),
     ]);
 
     const now = new Date();
@@ -129,6 +133,39 @@ export async function GET() {
       .map(([k, v]) => ({ category: k, label: catLabels[k] || k, amount: Math.round(v * 100) / 100 }))
       .sort((a, b) => b.amount - a.amount);
 
+    // ===== المرحلة 6: مؤشرات المشتريات والموردين =====
+    const activePurchases = purchases.filter((p) => p.status !== "cancelled" && p.status !== "draft");
+    const supplierPayables = activePurchases.reduce((s, p) => s + (p.total - p.paidAmount), 0);
+    const supplierOverdueList = activePurchases.filter(
+      (p) => p.status !== "paid" && p.total - p.paidAmount > 0.01 && p.dueDate.getTime() < now.getTime()
+    );
+    const purchasesByMonth = new Map<string, number>();
+    for (const p of activePurchases) {
+      const k = monthKey(p.issueDate);
+      purchasesByMonth.set(k, (purchasesByMonth.get(k) || 0) + p.subtotal);
+    }
+    const topSuppliers = Object.values(
+      activePurchases.reduce<Record<string, { name: string; total: number; count: number }>>((acc, p) => {
+        const name = p.supplier.company || p.supplier.name;
+        if (!acc[name]) acc[name] = { name, total: 0, count: 0 };
+        acc[name].total += p.total;
+        acc[name].count += 1;
+        return acc;
+      }, {})
+    )
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 5)
+      .map((s) => ({ name: s.name, total: Math.round(s.total * 100) / 100, count: s.count }));
+    const recentPurchases = purchases.slice(0, 5).map((p) => ({
+      id: p.id,
+      number: p.number,
+      supplierName: p.supplier.company || p.supplier.name,
+      total: p.total,
+      paidAmount: p.paidAmount,
+      status: p.status,
+      issueDate: p.issueDate,
+    }));
+
     return Response.json({
       kpis: {
         totalRevenue: Math.round(totalRevenue * 100) / 100,
@@ -144,6 +181,12 @@ export async function GET() {
         avgInvoice: activeInvoices.length
           ? Math.round((activeInvoices.reduce((s, i) => s + i.total, 0) / activeInvoices.length) * 100) / 100
           : 0,
+        // المرحلة 6
+        supplierPayables: Math.round(supplierPayables * 100) / 100,
+        supplierOverdueCount: supplierOverdueList.length,
+        supplierOverdueAmount: Math.round(supplierOverdueList.reduce((s, p) => s + (p.total - p.paidAmount), 0) * 100) / 100,
+        purchaseCount: activePurchases.length,
+        purchasesThisMonth: Math.round((purchasesByMonth.get(thisMonthK) || 0) * 100) / 100,
       },
       trend,
       invoiceStatusDist,
@@ -157,6 +200,13 @@ export async function GET() {
         stock: p.stock,
         minStock: p.minStock,
         unit: p.unit,
+      })),
+      // المرحلة 6
+      topSuppliers,
+      recentPurchases,
+      purchasesTrend: months.map((m) => ({
+        month: m.label,
+        purchases: Math.round((purchasesByMonth.get(m.key) || 0) * 100) / 100,
       })),
     });
   } catch (e) {

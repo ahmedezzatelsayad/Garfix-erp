@@ -23,6 +23,8 @@ import {
   Receipt,
   Package,
   Users,
+  Truck,
+  Building2,
   AlertTriangle,
   ArrowUpRight,
   Activity,
@@ -42,7 +44,7 @@ import {
   Bar,
   Legend,
 } from "recharts";
-import { fmtEGP, fmtDate, INVOICE_STATUS, CHART_COLORS } from "./format";
+import { fmtEGP, fmtDate, INVOICE_STATUS, PURCHASE_STATUS, CHART_COLORS } from "./format";
 
 interface DashData {
   kpis: {
@@ -57,6 +59,12 @@ interface DashData {
     invoiceCount: number;
     revenueGrowth: number;
     avgInvoice: number;
+    // المرحلة 6
+    supplierPayables: number;
+    supplierOverdueCount: number;
+    supplierOverdueAmount: number;
+    purchaseCount: number;
+    purchasesThisMonth: number;
   };
   trend: { month: string; revenue: number; expenses: number; profit: number }[];
   invoiceStatusDist: { status: string; label: string; count: number }[];
@@ -73,6 +81,17 @@ interface DashData {
   }[];
   expenseByCategory: { category: string; label: string; amount: number }[];
   lowStock: { id: string; name: string; sku: string; stock: number; minStock: number; unit: string }[];
+  // المرحلة 6
+  topSuppliers: { name: string; total: number; count: number }[];
+  recentPurchases: {
+    id: string;
+    number: string;
+    supplierName: string;
+    total: number;
+    paidAmount: number;
+    status: string;
+    issueDate: string;
+  }[];
 }
 
 const statusColors: Record<string, string> = {
@@ -220,6 +239,19 @@ export function DashboardSection({ onNavigate }: { onNavigate?: (tab: string) =>
           value={String(k.clientCount)}
           icon={Users}
           sub={`${k.invoiceCount} فاتورة إجمالاً`}
+        />
+        <KpiCard
+          title="مستحقات الموردين"
+          value={fmtEGP(k.supplierPayables)}
+          icon={Truck}
+          sub={`${k.supplierOverdueCount} فاتورة متأخرة — ${fmtEGP(k.supplierOverdueAmount)}`}
+          tone={k.supplierOverdueCount > 0 ? "negative" : "warning"}
+        />
+        <KpiCard
+          title="مشتريات الشهر الحالي"
+          value={fmtEGP(k.purchasesThisMonth)}
+          icon={Building2}
+          sub={`${k.purchaseCount} فاتورة شراء إجمالاً`}
         />
       </div>
 
@@ -475,6 +507,96 @@ export function DashboardSection({ onNavigate }: { onNavigate?: (tab: string) =>
           </div>
         </CardContent>
       </Card>
+
+      {/* ===== المرحلة 6: المشتريات والموردون ===== */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">أعلى الموردين بالتعامل</CardTitle>
+            <CardDescription>إجمالي فواتير الشراء النشطة</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {(data.topSuppliers || []).length === 0 && (
+              <p className="text-sm text-muted-foreground text-center py-8">لا توجد بيانات</p>
+            )}
+            {(data.topSuppliers || []).map((s, i) => {
+              const max = data.topSuppliers[0]?.total || 1;
+              return (
+                <div key={s.name} className="space-y-1">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="font-medium truncate">{i + 1}. {s.name}</span>
+                    <span className="tabular-nums text-muted-foreground">{fmtEGP(s.total)}</span>
+                  </div>
+                  <Progress value={(s.total / max) * 100} className="h-1.5" />
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+
+        <Card className="lg:col-span-2">
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="text-base">أحدث فواتير الشراء</CardTitle>
+              <CardDescription>آخر عمليات التوريد من الموردين</CardDescription>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => onNavigate?.("purchases")} className="gap-1 no-print">
+              كل المشتريات
+              <ArrowUpRight className="h-3.5 w-3.5" />
+            </Button>
+          </CardHeader>
+          <CardContent>
+            {(data.recentPurchases || []).length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">لا توجد مشتريات بعد</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-muted-foreground">
+                      <th className="py-2 text-right font-medium">رقم</th>
+                      <th className="py-2 text-right font-medium">المورد</th>
+                      <th className="py-2 text-right font-medium">الإجمالي</th>
+                      <th className="py-2 text-right font-medium">المدفوع</th>
+                      <th className="py-2 text-right font-medium">الإصدار</th>
+                      <th className="py-2 text-right font-medium">الحالة</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(data.recentPurchases || []).map((p) => {
+                      const st = PURCHASE_STATUS[p.status];
+                      return (
+                        <tr key={p.id} className="border-b last:border-0 hover:bg-muted/50">
+                          <td className="py-2.5 font-mono text-xs">{p.number}</td>
+                          <td className="py-2.5 font-medium">{p.supplierName}</td>
+                          <td className="py-2.5 tabular-nums">{fmtEGP(p.total)}</td>
+                          <td className="py-2.5 tabular-nums text-muted-foreground">{fmtEGP(p.paidAmount)}</td>
+                          <td className="py-2.5 text-muted-foreground">{fmtDate(p.issueDate)}</td>
+                          <td className="py-2.5">
+                            <Badge
+                              variant={st?.variant === "success" || st?.variant === "default" ? "default" : st?.variant || "outline"}
+                              className={
+                                p.status === "paid"
+                                  ? "bg-emerald-600 hover:bg-emerald-600"
+                                  : p.status === "overdue"
+                                    ? "bg-red-600 hover:bg-red-600"
+                                    : p.status === "received"
+                                      ? "bg-primary hover:bg-primary"
+                                      : ""
+                              }
+                            >
+                              {st?.label || p.status}
+                            </Badge>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

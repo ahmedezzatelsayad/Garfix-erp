@@ -20,12 +20,12 @@ export const ROLE_LABELS: Record<Role, string> = {
 /** صلاحيات كل دور — تُستخدم لفلترة الواجهة */
 export const ROLE_ACCESS: Record<Role, { nav: string[]; can: string[] }> = {
   admin: {
-    nav: ["dashboard", "invoices", "clients", "inventory", "expenses", "agent", "reports", "users", "settings"],
+    nav: ["dashboard", "invoices", "clients", "purchases", "inventory", "expenses", "agent", "reports", "users", "settings"],
     can: ["*"],
   },
   accountant: {
-    nav: ["dashboard", "invoices", "clients", "inventory", "expenses", "agent", "reports", "settings"],
-    can: ["invoices:write", "payments:write", "expenses:write", "clients:write", "products:write", "settings:read", "agent:run"],
+    nav: ["dashboard", "invoices", "clients", "purchases", "inventory", "expenses", "agent", "reports", "settings"],
+    can: ["invoices:write", "payments:write", "expenses:write", "clients:write", "products:write", "purchases:write", "suppliers:write", "settings:read", "agent:run"],
   },
   sales: {
     nav: ["dashboard", "invoices", "clients", "inventory", "agent"],

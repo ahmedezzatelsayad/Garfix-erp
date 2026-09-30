@@ -18,7 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { AlertTriangle, Printer, FileSpreadsheet, TrendingUp } from "lucide-react";
+import { AlertTriangle, Printer, FileSpreadsheet, TrendingUp, Truck } from "lucide-react";
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -77,6 +77,30 @@ interface ReportsData {
     netProfit: number;
     totalReceivables: number;
     overdueTotal: number;
+  };
+  // المرحلة 6
+  purchasesByMonth: { month: string; purchases: number; supplierPayments: number }[];
+  supplierPerformance: {
+    name: string;
+    city: string | null;
+    status: string;
+    purchaseCount: number;
+    purchased: number;
+    paid: number;
+    balance: number;
+    overdueCount: number;
+    overdueAmount: number;
+    paymentRate: number;
+  }[];
+  purchasesSummary: {
+    totalPurchases: number;
+    totalPurchasesNet: number;
+    totalSupplierPayments: number;
+    supplierPayables: number;
+    supplierOverdue: number;
+    purchaseCount: number;
+    receivedCount: number;
+    supplierCount: number;
   };
 }
 
@@ -147,6 +171,12 @@ export function ReportsSection() {
             <CardTitle className="text-xl tabular-nums text-red-600 dark:text-red-400">{fmtEGP(s.overdueTotal)}</CardTitle>
           </CardHeader>
         </Card>
+        <Card className="border-primary/30">
+          <CardHeader className="pb-2">
+            <CardDescription>مستحقات الموردين</CardDescription>
+            <CardTitle className="text-xl tabular-nums text-primary">{fmtEGP(data.purchasesSummary?.supplierPayables || 0)}</CardTitle>
+          </CardHeader>
+        </Card>
       </div>
 
       <Tabs defaultValue="pnl" dir="rtl">
@@ -156,6 +186,7 @@ export function ReportsSection() {
             <TabsTrigger value="aging">تقادم الذمم</TabsTrigger>
             <TabsTrigger value="inventory">تقييم المخزون</TabsTrigger>
             <TabsTrigger value="clients">أداء العملاء</TabsTrigger>
+            <TabsTrigger value="purchases">المشتريات والموردون</TabsTrigger>
           </TabsList>
           <Button variant="outline" className="gap-1.5 no-print" onClick={() => window.print()}>
             <Printer className="h-4 w-4" />
@@ -455,6 +486,143 @@ export function ReportsSection() {
                             className={c.paymentRate >= 90 ? "bg-emerald-600 hover:bg-emerald-600" : ""}
                           >
                             {c.paymentRate}%
+                          </Badge>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ===== المرحلة 6: المشتريات والموردون ===== */}
+        <TabsContent value="purchases" className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription>إجمالي المشتريات (صافي)</CardDescription>
+                <CardTitle className="text-lg tabular-nums">{fmtEGP(data.purchasesSummary?.totalPurchasesNet || 0)}</CardTitle>
+              </CardHeader>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription>مدفوع للموردين</CardDescription>
+                <CardTitle className="text-lg tabular-nums text-emerald-600 dark:text-emerald-400">{fmtEGP(data.purchasesSummary?.totalSupplierPayments || 0)}</CardTitle>
+              </CardHeader>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription>مستحقات غير مسددة</CardDescription>
+                <CardTitle className="text-lg tabular-nums text-amber-600 dark:text-amber-400">{fmtEGP(data.purchasesSummary?.supplierPayables || 0)}</CardTitle>
+              </CardHeader>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription>منها متأخرة السداد</CardDescription>
+                <CardTitle className="text-lg tabular-nums text-red-600 dark:text-red-400">{fmtEGP(data.purchasesSummary?.supplierOverdue || 0)}</CardTitle>
+              </CardHeader>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Truck className="h-4 w-4 text-primary" />
+                المشتريات ومدفوعات الموردين — آخر 6 أشهر
+              </CardTitle>
+              <CardDescription>
+                فواتير الشراء النشطة مقابل المدفوع الفعلي للموردين شهرياً
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="h-72" dir="ltr">
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={data.purchasesByMonth || []} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                    <XAxis dataKey="month" tick={{ fontSize: 12 }} stroke="var(--muted-foreground)" />
+                    <YAxis
+                      tick={{ fontSize: 11 }}
+                      stroke="var(--muted-foreground)"
+                      tickFormatter={(v: number) => `${Math.round(v / 1000)}k`}
+                    />
+                    <Tooltip
+                      formatter={(value: number, name: string) => {
+                        const labels: Record<string, string> = {
+                          purchases: "المشتريات (صافي)",
+                          supplierPayments: "مدفوع للموردين",
+                        };
+                        return [fmtEGP(value), labels[name] || name];
+                      }}
+                      contentStyle={{
+                        borderRadius: 12,
+                        border: "1px solid var(--border)",
+                        backgroundColor: "var(--popover)",
+                        color: "var(--popover-foreground)",
+                      }}
+                    />
+                    <Legend
+                      formatter={(v: string) => {
+                        const labels: Record<string, string> = {
+                          purchases: "المشتريات (صافي)",
+                          supplierPayments: "مدفوع للموردين",
+                        };
+                        return labels[v] || v;
+                      }}
+                    />
+                    <Bar dataKey="purchases" fill="#f59e0b" radius={[4, 4, 0, 0]} barSize={26} />
+                    <Bar dataKey="supplierPayments" fill="#10b981" radius={[4, 4, 0, 0]} barSize={26} />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <TrendingUp className="h-4 w-4 text-primary" />
+                أداء الموردين
+              </CardTitle>
+              <CardDescription>
+                مرتب حسب حجم التعامل — نسبة السداد = المدفوع للمورد ÷ إجمالي مشترياته
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-muted-foreground bg-muted/40">
+                      <th className="py-2.5 px-3 text-right font-medium">المورد</th>
+                      <th className="py-2.5 px-3 text-right font-medium">المدينة</th>
+                      <th className="py-2.5 px-3 text-right font-medium tabular-nums">فواتير</th>
+                      <th className="py-2.5 px-3 text-right font-medium tabular-nums">إجمالي المشتريات</th>
+                      <th className="py-2.5 px-3 text-right font-medium tabular-nums">مدفوع</th>
+                      <th className="py-2.5 px-3 text-right font-medium tabular-nums">الرصيد</th>
+                      <th className="py-2.5 px-3 text-right font-medium">نسبة السداد</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(data.supplierPerformance || []).map((sp) => (
+                      <tr key={sp.name} className="border-b last:border-0 hover:bg-muted/30">
+                        <td className="py-2.5 px-3 font-medium">{sp.name}</td>
+                        <td className="py-2.5 px-3 text-muted-foreground">{sp.city || "—"}</td>
+                        <td className="py-2.5 px-3 tabular-nums">{sp.purchaseCount}</td>
+                        <td className="py-2.5 px-3 tabular-nums">{fmtEGP(sp.purchased)}</td>
+                        <td className="py-2.5 px-3 tabular-nums text-emerald-600 dark:text-emerald-400">{fmtEGP(sp.paid)}</td>
+                        <td className="py-2.5 px-3">
+                          <span className={`tabular-nums ${sp.overdueCount > 0 ? "text-red-600 dark:text-red-400 font-semibold" : ""}`}>
+                            {fmtEGP(sp.balance)}
+                          </span>
+                          {sp.overdueCount > 0 && <Badge variant="destructive" className="ms-1.5">{sp.overdueCount} متأخرة</Badge>}
+                        </td>
+                        <td className="py-2.5 px-3">
+                          <Badge
+                            variant={sp.paymentRate >= 90 ? "default" : sp.paymentRate >= 60 ? "secondary" : "destructive"}
+                            className={sp.paymentRate >= 90 ? "bg-emerald-600 hover:bg-emerald-600" : ""}
+                          >
+                            {sp.paymentRate}%
                           </Badge>
                         </td>
                       </tr>
